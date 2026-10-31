@@ -1,0 +1,606 @@
+openapi: 3.0.3
+info:
+  title: FlickLAN REST & WebSocket API Specification
+  description: |
+    Comprehensive API documentation for **FlickLAN** - A Local Area Network real-time messaging, file sharing, backup & restore, and auto-updating application.
+  version: 1.0.0
+  contact:
+    name: FlickLAN Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:65005
+    description: Localhost instance
+  - url: http://{lanIp}:65005
+    description: LAN instance (accessible by other devices on local Wi-Fi)
+    variables:
+      lanIp:
+        default: 192.168.1.50
+        description: Local network IP address of the host machine
+
+tags:
+  - name: P2P Mesh Receiver
+    description: Inbound endpoints invoked directly by other LAN nodes to deliver messages
+  - name: Chat & Peer Discovery
+    description: Node metadata, active LAN peer listing, and channel / DM message history
+  - name: File Transfers
+    description: Peer-to-peer file attachment uploads and chunked streaming downloads
+  - name: Backup & Restore
+    description: Export chat snapshots (JSON/ZIP) and restore with safe deduplication
+  - name: Auto-Update
+    description: Version checks and atomic restart process
+  - name: WebSocket & STOMP Protocol
+    description: Real-time messaging and peer presence broker channels
+
+paths:
+  /api/p2p/direct-message:
+    post:
+      tags:
+        - P2P Mesh Receiver
+      summary: Inbound P2P Direct Message
+      description: Called directly by a remote peer node when sending a 1-to-1 message to this machine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Message'
+      responses:
+        '200':
+          description: Message received and committed to local database
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "received"
+                  id:
+                    type: string
+
+  /api/p2p/channel-message:
+    post:
+      tags:
+        - P2P Mesh Receiver
+      summary: Inbound P2P Channel Message
+      description: Called directly by a remote peer node when broadcasting a room message across the LAN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Message'
+      responses:
+        '200':
+          description: Message received and committed to local database
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "received"
+                  id:
+                    type: string
+
+  /api/info:
+    get:
+      tags:
+        - Chat & Peer Discovery
+      summary: Get local node and network metadata
+      description: Returns instance ID, machine hostname, LAN IP, total message count, and detects if the client is on the host machine.
+      responses:
+        '200':
+          description: Node metadata returned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instanceId:
+                    type: string
+                    example: "48c2b745-93df-498c-8438-c6f37cbdb772"
+                  hostName:
+                    type: string
+                    example: "DESKTOP-ALICE"
+                  lanIp:
+                    type: string
+                    example: "192.168.1.50"
+                  isHostClient:
+                    type: boolean
+                    example: true
+                  totalMessages:
+                    type: integer
+                    example: 342
+
+  /api/peers:
+    get:
+      tags:
+        - Chat & Peer Discovery
+      summary: List discovered LAN peers
+      description: Returns active instances (Host PC, other computers, and active mobile browsers) on the local network.
+      responses:
+        '200':
+          description: List of discovered peers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Peer'
+
+  /api/messages/channel/{channel}:
+    get:
+      tags:
+        - Chat & Peer Discovery
+      summary: Retrieve channel message history
+      description: Returns recent messages in a public channel in chronological order.
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          description: Channel identifier (e.g., general, random, dev-room)
+          schema:
+            type: string
+            example: "general"
+        - name: limit
+          in: query
+          required: false
+          description: Max messages to retrieve
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Message history list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+
+  /api/messages/direct/{peerId}:
+    get:
+      tags:
+        - Chat & Peer Discovery
+      summary: Retrieve 1-to-1 direct message history
+      description: Returns messages exchanged between the current user and target peer.
+      parameters:
+        - name: peerId
+          in: path
+          required: true
+          description: Identifier of the peer
+          schema:
+            type: string
+        - name: currentUserId
+          in: query
+          required: true
+          description: Identifier of the logged-in user
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Direct conversation messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+    delete:
+      tags:
+        - Chat & Peer Discovery
+      summary: Delete direct message history with a peer
+      description: Completely removes all messages in the 1-to-1 conversation with the specified peer.
+      parameters:
+        - name: peerId
+          in: path
+          required: true
+          description: Target peer identifier
+          schema:
+            type: string
+        - name: currentUserId
+          in: query
+          required: true
+          description: Current user identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Conversation history deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  deletedCount:
+                    type: integer
+                    example: 24
+
+  /api/files/upload:
+    post:
+      tags:
+        - File Transfers
+      summary: Upload a file attachment
+      description: Uploads a photo, document, or archive (up to 500MB) for LAN transfer.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload
+      responses:
+        '200':
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  originalName:
+                    type: string
+                    example: "project_specs.pdf"
+                  storedName:
+                    type: string
+                    example: "a8e1b3-4f9e.pdf"
+                  size:
+                    type: integer
+                    example: 2458900
+                  downloadUrl:
+                    type: string
+                    example: "/api/files/download/a8e1b3-4f9e.pdf"
+        '400':
+          description: Empty or invalid file provided
+
+  /api/files/download/{filename}:
+    get:
+      tags:
+        - File Transfers
+      summary: Download a shared file
+      description: High-speed local stream download of a previously uploaded file.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Stored name of the file
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Binary file stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: File not found
+
+  /api/backup/export:
+    get:
+      tags:
+        - Backup & Restore
+      summary: Export chat backup archive
+      description: Streams a downloadable backup snapshot in JSON (lightweight) or ZIP format (includes attachments).
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: Backup format
+          schema:
+            type: string
+            enum: [json, zip]
+            default: json
+        - name: includeMedia
+          in: query
+          required: false
+          description: Include transferred files in ZIP archive
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Backup file download
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupData'
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/backup/export/peer/{peerId}:
+    get:
+      tags:
+        - Backup & Restore
+      summary: Export 1-to-1 conversation backup
+      description: Streams a downloadable JSON backup containing only the chat history with a specific peer.
+      parameters:
+        - name: peerId
+          in: path
+          required: true
+          description: Identifier of the peer
+          schema:
+            type: string
+        - name: currentUserId
+          in: query
+          required: true
+          description: Identifier of the current user
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Peer chat backup download
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupData'
+
+  /api/backup/inspect:
+    post:
+      tags:
+        - Backup & Restore
+      summary: Inspect backup file (Pre-restore preview)
+      description: Inspects an uploaded backup without committing changes.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Backup inspection metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupData'
+        '400':
+          description: Invalid backup archive
+
+  /api/backup/restore:
+    post:
+      tags:
+        - Backup & Restore
+      summary: Restore messages from backup
+      description: Restores conversation history with safe UUID deduplication (MERGE) or full wipe (OVERWRITE).
+      parameters:
+        - name: mode
+          in: query
+          required: false
+          description: Restore strategy
+          schema:
+            type: string
+            enum: [MERGE, OVERWRITE]
+            default: MERGE
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Restore summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  importedCount:
+                    type: integer
+                    example: 342
+                  totalInBackup:
+                    type: integer
+                    example: 342
+                  mode:
+                    type: string
+                    example: "MERGE"
+
+  /api/update/check:
+    get:
+      tags:
+        - Auto-Update
+      summary: Check for new version release
+      description: Compares current running version with latest available release.
+      responses:
+        '200':
+          description: Version update status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateInfo'
+
+  /api/update/apply:
+    post:
+      tags:
+        - Auto-Update
+      summary: Apply update and restart
+      description: Initiates binary download and triggers background atomic Windows updater process.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - downloadUrl
+              properties:
+                downloadUrl:
+                  type: string
+                  example: "https://github.com/flicklan/flicklan/releases/download/v1.1.0/FlickLAN.exe"
+                sha256:
+                  type: string
+                  example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      responses:
+        '200':
+          description: Update initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "downloading"
+                  message:
+                    type: string
+                    example: "Update download initiated. Application will restart when ready."
+
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "7e50a41d-4008-410a-bfb5-927163c9b9ec"
+        type:
+          type: string
+          enum: [CHAT, FILE, SYSTEM, JOIN, LEAVE]
+          example: "CHAT"
+        senderId:
+          type: string
+          example: "user_a1b2c3"
+        senderName:
+          type: string
+          example: "Alice"
+        recipientId:
+          type: string
+          nullable: true
+          example: "user_x9y8z7"
+        channel:
+          type: string
+          example: "general"
+        content:
+          type: string
+          example: "Hey everyone, welcome to FlickLAN!"
+        fileName:
+          type: string
+          nullable: true
+          example: "report.pdf"
+        fileSize:
+          type: integer
+          nullable: true
+          example: 1048576
+        fileDownloadUrl:
+          type: string
+          nullable: true
+          example: "/api/files/download/report.pdf"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-10-31T20:25:00Z"
+
+    Peer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "user_m1n2o3"
+        name:
+          type: string
+          example: "DESKTOP-BOB"
+        ipAddress:
+          type: string
+          example: "192.168.1.75"
+        port:
+          type: integer
+          example: 8080
+        clientType:
+          type: string
+          enum: [HOST, NATIVE_EXE, MOBILE, BROWSER]
+          example: "MOBILE"
+        online:
+          type: boolean
+          example: true
+        lastSeenEpochMs:
+          type: integer
+          example: 1793460000000
+
+    BackupData:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+          example: 1
+        exportDate:
+          type: string
+          format: date-time
+        appVersion:
+          type: string
+          example: "1.0.0"
+        exportedBy:
+          type: string
+          example: "DESKTOP-ALICE"
+        totalMessages:
+          type: integer
+          example: 342
+        checksum:
+          type: string
+          example: "a6b98e72..."
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    UpdateInfo:
+      type: object
+      properties:
+        currentVersion:
+          type: string
+          example: "1.0.0"
+        latestVersion:
+          type: string
+          example: "1.1.0"
+        updateAvailable:
+          type: boolean
+          example: true
+        releaseNotes:
+          type: string
+          example: "Fixed mobile touch responsiveness and added browser notification badges."
+        downloadUrl:
+          type: string
+          example: "https://github.com/flicklan/flicklan/releases/download/v1.1.0/FlickLAN.exe"
+        sha256:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+

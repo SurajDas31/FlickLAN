@@ -1,0 +1,99 @@
+# ====================================================================
+# FlickLAN - Git Ignore Configuration
+# Tailored for Java (Spring Boot) + React (Vite) + Native .EXE Packaging
+# ====================================================================
+
+# --------------------------------------------------------------------
+# 1. Local Runtime Data & Databases (Private to Each Machine)
+# --------------------------------------------------------------------
+data/
+backend/data/
+**/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+uploads/
+**/uploads/
+updates/
+**/updates/
+
+# --------------------------------------------------------------------
+# 2. Frontend Dependencies & Build Outputs (React / Vite)
+# --------------------------------------------------------------------
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+.pnpm-store/
+frontend/.vite/
+.vite/
+*.local
+.env.local
+.env.*.local
+
+# --------------------------------------------------------------------
+# 3. Backend Build Artifacts (Java / Maven)
+# --------------------------------------------------------------------
+backend/target/
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# Generated static frontend bundle inside Spring Boot resources
+backend/src/main/resources/static/assets/
+backend/src/main/resources/static/index.html
+
+# --------------------------------------------------------------------
+# 4. Native Packaging Outputs (jpackage / Windows .exe)
+# --------------------------------------------------------------------
+dist-app/
+**/dist-app/
+FlickLAN.exe
+FlickLAN-update.exe
+*.msi
+*.exe
+
+# --------------------------------------------------------------------
+# 5. Logs & Temporary Files
+# --------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+
+# --------------------------------------------------------------------
+# 6. IDEs & Editors
+# --------------------------------------------------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.code-workspace
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# --------------------------------------------------------------------
+# 7. Operating System Artifacts
+# --------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
